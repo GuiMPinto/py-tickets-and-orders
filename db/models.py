@@ -1,4 +1,6 @@
+from django import db
 from django.db import models
+from django.core.exceptions import ValidationError
 
 
 class Genre(models.Model):
@@ -25,6 +27,13 @@ class Movie(models.Model):
     def __str__(self) -> str:
         return self.title
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["title"]), 
+        ]
+
+        #ordering = ['title']
+
 
 class CinemaHall(models.Model):
     name = models.CharField(max_length=255)
@@ -50,3 +59,52 @@ class MovieSession(models.Model):
 
     def __str__(self) -> str:
         return f"{self.movie.title} {str(self.show_time)}"
+
+
+class Order(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        to='auth.User', on_delete=models.CASCADE, related_name='orders'
+    )
+
+    def __str__(self) -> str:
+        return f"Order {self.id} by {self.user.username} at {self.created_at}"
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class Ticket(models.Model):
+    movie_session = models.ForeignKey(
+        to=MovieSession, on_delete=models.CASCADE, related_name='tickets'
+    )
+    row = models.IntegerField()
+    seat = models.IntegerField()
+    order = models.ForeignKey(
+        to=Order, on_delete=models.CASCADE, related_name='tickets'
+    )
+
+    def clean(self):
+        # Validate that the row and seat are within the cinema hall's capacity
+        if self.row < 1 or self.row > self.movie_session.cinema_hall.rows:
+            raise ValidationError(f"Row {self.row} is out of range for this cinema hall.")
+        if self.seat < 1 or self.seat > self.movie_session.cinema_hall.seats_in_row:
+            raise ValidationError(f"Seat {self.seat} is out of range for this cinema hall.")
+# You also should override method `save()` and add there 
+# `full_clean()` method call in order to call method
+# `clean()` when you ave the ticket.
+
+    class Meta:
+        unique_together = ["row", "seat", "movie_session"]
+
+    def __str__(self) -> str:
+        return f"Ticket for {self.movie_session.movie.title} at {self.movie_session.show_time}, Row: {self.row}, Seat: {self.seat}"
+
+
+class User(models.Model):
+    username = models.CharField(max_length=255, unique=True)
+    email = models.EmailField(unique=True)
+    password = models.CharField(max_length=255)
+
+    def __str__(self) -> str:
+        return self.username
